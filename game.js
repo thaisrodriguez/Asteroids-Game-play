@@ -123,8 +123,20 @@ const TRIPLE_DURATION = 10;     // segundos de efecto
 const TRIPLE_SPREAD   = 0.26;   // rad entre balas del abanico
 const POWERUP_DELAY   = [12, 25]; // segundos hasta que aparece (una vez por juego)
 
+// ── Power-up: asteroides lentos ───────────────────────────────────────────────
+const SLOW_DURATION  = 6;        // segundos de efecto
+const SLOW_FACTOR    = 0.5;      // multiplicador de velocidad de los asteroides
+const SLOW_MIN_LEVEL = 3;        // aparece desde este nivel (una vez por nivel)
+const SLOW_DELAY     = [8, 15];  // segundos tras empezar el nivel hasta que aparece
+
+const POWERUP_STYLE = {
+  triple: { color: '#0ff', label: '3' },
+  slow:   { color: '#6f6', label: 'L' },
+};
+
 class PowerUp {
-  constructor() {
+  constructor(type) {
+    this.type = type;
     do {
       this.x = rand(40, W - 40);
       this.y = rand(60, H - 40);
@@ -147,8 +159,9 @@ class PowerUp {
     const pulse = 1 + Math.sin(this.t * 6) * 0.12;
     ctx.save();
     ctx.translate(this.x, this.y);
-    ctx.strokeStyle = '#0ff';
-    ctx.fillStyle   = '#0ff';
+    const style = POWERUP_STYLE[this.type];
+    ctx.strokeStyle = style.color;
+    ctx.fillStyle   = style.color;
     ctx.lineWidth   = 1.5;
     ctx.beginPath();
     ctx.arc(0, 0, this.radius * pulse, 0, Math.PI * 2);
@@ -156,7 +169,7 @@ class PowerUp {
     ctx.font = 'bold 16px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('3', 0, 1);
+    ctx.fillText(style.label, 0, 1);
     ctx.restore();
   }
 }
@@ -290,6 +303,10 @@ let powerUp;          // power-up en pantalla (o null)
 let powerUpPending;   // true hasta que aparece (solo una vez por juego)
 let powerUpDelay;     // segundos jugados hasta que aparece
 let tripleTimer;      // segundos restantes de disparo triple
+let slowPowerUp;      // power-up de ralentización en pantalla (o null)
+let slowPending;      // true hasta que aparece (una vez por nivel desde SLOW_MIN_LEVEL)
+let slowDelay;        // segundos del nivel hasta que aparece
+let slowTimer;        // segundos restantes de asteroides lentos
 
 function spawnAsteroids(count) {
   const SAFE_DIST = 130;
@@ -316,6 +333,9 @@ function initGame() {
   powerUpPending = true;
   powerUpDelay   = rand(...POWERUP_DELAY);
   tripleTimer    = 0;
+  slowPowerUp    = null;
+  slowPending    = false;
+  slowTimer      = 0;
   spawnAsteroids(4);
 }
 
@@ -324,8 +344,15 @@ function nextLevel() {
   bullets   = [];
   particles = [];
   ship.reset();
+  slowTimer   = 0;
+  slowPowerUp = null;
+  slowPending = level >= SLOW_MIN_LEVEL;
+  slowDelay   = rand(...SLOW_DELAY);
   spawnAsteroids(3 + level);
 }
+
+// dt de los asteroides: la mitad mientras dura el power-up de ralentización
+const asteroidDt = dt => (slowTimer > 0 ? dt * SLOW_FACTOR : dt);
 
 function explode(x, y, count = 8) {
   for (let i = 0; i < count; i++) particles.push(new Particle(x, y));
@@ -335,6 +362,7 @@ function killShip() {
   explode(ship.x, ship.y, 14);
   ship.dead = true;
   tripleTimer = 0;
+  slowTimer   = 0;
   lives--;
   if (lives <= 0) {
     state = 'gameover';
@@ -357,7 +385,7 @@ function update(dt) {
     deadTimer -= dt;
     particles.forEach(p => p.update(dt));
     particles = particles.filter(p => !p.dead);
-    asteroids.forEach(a => a.update(dt));
+    asteroids.forEach(a => a.update(asteroidDt(dt)));
     if (deadTimer <= 0) { state = 'playing'; ship.reset(); }
     return;
   }
@@ -375,7 +403,7 @@ function update(dt) {
     powerUpDelay -= dt;
     if (powerUpDelay <= 0) {
       powerUpPending = false;
-      powerUp = new PowerUp();
+      powerUp = new PowerUp('triple');
     }
   }
   if (powerUp) {
@@ -386,8 +414,25 @@ function update(dt) {
     }
   }
 
+  // Power-up de ralentización: una vez por nivel desde SLOW_MIN_LEVEL
+  if (slowTimer > 0) slowTimer = Math.max(0, slowTimer - dt);
+  if (slowPending) {
+    slowDelay -= dt;
+    if (slowDelay <= 0) {
+      slowPending = false;
+      slowPowerUp = new PowerUp('slow');
+    }
+  }
+  if (slowPowerUp) {
+    slowPowerUp.update(dt);
+    if (dist(ship, slowPowerUp) < ship.radius + slowPowerUp.radius) {
+      slowTimer   = SLOW_DURATION;
+      slowPowerUp = null;
+    }
+  }
+
   bullets.forEach(b => b.update(dt));
-  asteroids.forEach(a => a.update(dt));
+  asteroids.forEach(a => a.update(asteroidDt(dt)));
   particles.forEach(p => p.update(dt));
 
   bullets   = bullets.filter(b => !b.dead);
@@ -454,10 +499,16 @@ function drawHUD() {
   for (let i = 0; i < lives; i++)
     drawLifeIcon(W - 16 - i * 22, 18);
 
+  ctx.textAlign = 'left';
+  let row = 48;
   if (tripleTimer > 0) {
-    ctx.fillStyle = '#0ff';
-    ctx.textAlign = 'left';
-    ctx.fillText(`TRIPLE ${tripleTimer.toFixed(1)}s`, 14, 48);
+    ctx.fillStyle = POWERUP_STYLE.triple.color;
+    ctx.fillText(`TRIPLE ${tripleTimer.toFixed(1)}s`, 14, row);
+    row += 22;
+  }
+  if (slowTimer > 0) {
+    ctx.fillStyle = POWERUP_STYLE.slow.color;
+    ctx.fillText(`LENTO ${slowTimer.toFixed(1)}s`, 14, row);
   }
 
 }
@@ -480,6 +531,7 @@ function draw() {
   asteroids.forEach(a => a.draw());
   bullets.forEach(b => b.draw());
   if (powerUp) powerUp.draw();
+  if (slowPowerUp) slowPowerUp.draw();
   ship.draw();
 
   drawHUD();
