@@ -129,9 +129,15 @@ const SLOW_FACTOR    = 0.5;      // multiplicador de velocidad de los asteroides
 const SLOW_MIN_LEVEL = 3;        // aparece desde este nivel (una vez por nivel)
 const SLOW_DELAY     = [8, 15];  // segundos tras empezar el nivel hasta que aparece
 
+// ── Power-up: Bomba Nova ──────────────────────────────────────────────────────
+const NOVA_KEY   = 'KeyB';
+const NOVA_DELAY = [25, 45];   // segundos hasta que aparece (ítem escaso: una vez por juego)
+const NOVA_FLASH = 0.6;        // duración del destello al detonar
+
 const POWERUP_STYLE = {
   triple: { color: '#0ff', label: '3' },
   slow:   { color: '#6f6', label: 'L' },
+  nova:   { color: '#f6f', label: 'N' },
 };
 
 class PowerUp {
@@ -307,6 +313,11 @@ let slowPowerUp;      // power-up de ralentización en pantalla (o null)
 let slowPending;      // true hasta que aparece (una vez por nivel desde SLOW_MIN_LEVEL)
 let slowDelay;        // segundos del nivel hasta que aparece
 let slowTimer;        // segundos restantes de asteroides lentos
+let novaPowerUp;      // ítem Nova en pantalla (o null)
+let novaPending;      // true hasta que aparece (una vez por juego)
+let novaDelay;        // segundos jugados hasta que aparece
+let novaReady;        // true si la nave lleva una bomba lista (un solo uso)
+let novaFlash;        // segundos restantes del destello de detonación
 
 function spawnAsteroids(count) {
   const SAFE_DIST = 130;
@@ -336,6 +347,11 @@ function initGame() {
   slowPowerUp    = null;
   slowPending    = false;
   slowTimer      = 0;
+  novaPowerUp    = null;
+  novaPending    = true;
+  novaDelay      = rand(...NOVA_DELAY);
+  novaReady      = false;
+  novaFlash      = 0;
   spawnAsteroids(4);
 }
 
@@ -353,6 +369,18 @@ function nextLevel() {
 
 // dt de los asteroides: la mitad mientras dura el power-up de ralentización
 const asteroidDt = dt => (slowTimer > 0 ? dt * SLOW_FACTOR : dt);
+
+// Bomba Nova: destruye todos los asteroides en pantalla (sin fragmentos)
+function detonateNova() {
+  novaReady = false;
+  novaFlash = NOVA_FLASH;
+  for (const a of asteroids) {
+    a.dead = true;
+    score += POINTS[a.size];
+    explode(a.x, a.y, a.size * 5);
+  }
+  asteroids = [];
+}
 
 function explode(x, y, count = 8) {
   for (let i = 0; i < count; i++) particles.push(new Particle(x, y));
@@ -413,6 +441,24 @@ function update(dt) {
       powerUp = null;
     }
   }
+
+  // Bomba Nova: ítem escaso (una vez por juego); se activa con NOVA_KEY
+  if (novaFlash > 0) novaFlash = Math.max(0, novaFlash - dt);
+  if (novaPending) {
+    novaDelay -= dt;
+    if (novaDelay <= 0) {
+      novaPending = false;
+      novaPowerUp = new PowerUp('nova');
+    }
+  }
+  if (novaPowerUp) {
+    novaPowerUp.update(dt);
+    if (dist(ship, novaPowerUp) < ship.radius + novaPowerUp.radius) {
+      novaReady   = true;
+      novaPowerUp = null;
+    }
+  }
+  if (pressed(NOVA_KEY) && novaReady) detonateNova();
 
   // Power-up de ralentización: una vez por nivel desde SLOW_MIN_LEVEL
   if (slowTimer > 0) slowTimer = Math.max(0, slowTimer - dt);
@@ -509,6 +555,11 @@ function drawHUD() {
   if (slowTimer > 0) {
     ctx.fillStyle = POWERUP_STYLE.slow.color;
     ctx.fillText(`LENTO ${slowTimer.toFixed(1)}s`, 14, row);
+    row += 22;
+  }
+  if (novaReady) {
+    ctx.fillStyle = POWERUP_STYLE.nova.color;
+    ctx.fillText('NOVA [B]', 14, row);
   }
 
 }
@@ -532,9 +583,16 @@ function draw() {
   bullets.forEach(b => b.draw());
   if (powerUp) powerUp.draw();
   if (slowPowerUp) slowPowerUp.draw();
+  if (novaPowerUp) novaPowerUp.draw();
   ship.draw();
 
   drawHUD();
+
+  // Destello de la Bomba Nova
+  if (novaFlash > 0) {
+    ctx.fillStyle = `rgba(255,255,255,${(novaFlash / NOVA_FLASH * 0.8).toFixed(2)})`;
+    ctx.fillRect(0, 0, W, H);
+  }
 
   if (state === 'gameover')
     drawOverlay('GAME OVER', `PUNTAJE: ${score}   —   ESPACIO PARA REINICIAR`);
