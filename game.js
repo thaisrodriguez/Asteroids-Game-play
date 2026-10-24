@@ -121,13 +121,12 @@ class Asteroid {
 // ── Power-up: disparo triple ──────────────────────────────────────────────────
 const TRIPLE_DURATION = 10;     // segundos de efecto
 const TRIPLE_SPREAD   = 0.26;   // rad entre balas del abanico
-const POWERUP_DELAY   = [12, 25]; // segundos hasta que aparece (una vez por juego)
+const POWERUP_DELAY   = [4, 10];  // segundos tras empezar el nivel hasta que aparece (una vez por nivel)
 
 // ── Power-up: asteroides lentos ───────────────────────────────────────────────
 const SLOW_DURATION  = 6;        // segundos de efecto
 const SLOW_FACTOR    = 0.5;      // multiplicador de velocidad de los asteroides
-const SLOW_MIN_LEVEL = 3;        // aparece desde este nivel (una vez por nivel)
-const SLOW_DELAY     = [8, 15];  // segundos tras empezar el nivel hasta que aparece
+const SLOW_DELAY     = [6, 12];  // segundos tras empezar el nivel hasta que aparece (una vez por nivel)
 
 // ── Power-up: Bomba Nova ──────────────────────────────────────────────────────
 const NOVA_KEY   = 'KeyB';
@@ -138,7 +137,7 @@ const NOVA_FLASH = 0.6;        // duración del destello al detonar
 const HYPER_DURATION = 8;           // segundos de efecto
 const HYPER_THRUST   = 2.5;         // multiplicador de aceleración (y velocidad máxima)
 const HYPER_ROT      = 1.35;        // multiplicador de giro, para esquivar con precisión
-const HYPER_DELAY    = [18, 35];    // segundos hasta que aparece (una vez por juego)
+const HYPER_DELAY    = [8, 14];     // segundos tras empezar el nivel hasta que aparece (una vez por nivel)
 
 const POWERUP_STYLE = {
   triple: { color: '#0ff', label: '3' },
@@ -314,11 +313,11 @@ let score, lives, level;
 let state;      // 'playing' | 'dead' | 'gameover'
 let deadTimer;
 let powerUp;          // power-up en pantalla (o null)
-let powerUpPending;   // true hasta que aparece (solo una vez por juego)
+let powerUpPending;   // true hasta que aparece (una vez por nivel)
 let powerUpDelay;     // segundos jugados hasta que aparece
 let tripleTimer;      // segundos restantes de disparo triple
 let slowPowerUp;      // power-up de ralentización en pantalla (o null)
-let slowPending;      // true hasta que aparece (una vez por nivel desde SLOW_MIN_LEVEL)
+let slowPending;      // true hasta que aparece (una vez por nivel)
 let slowDelay;        // segundos del nivel hasta que aparece
 let slowTimer;        // segundos restantes de asteroides lentos
 let novaPowerUp;      // ítem Nova en pantalla (o null)
@@ -327,7 +326,7 @@ let novaDelay;        // segundos jugados hasta que aparece
 let novaReady;        // true si la nave lleva una bomba lista (un solo uso)
 let novaFlash;        // segundos restantes del destello de detonación
 let hyperPowerUp;     // ítem de hiperpropulsión en pantalla (o null)
-let hyperPending;     // true hasta que aparece (una vez por juego)
+let hyperPending;     // true hasta que aparece (una vez por nivel)
 let hyperDelay;       // segundos jugados hasta que aparece
 let hyperTimer;       // segundos restantes de hiperpropulsión
 
@@ -343,6 +342,19 @@ function spawnAsteroids(count) {
   }
 }
 
+// Triple, lento e hiperpropulsión aparecen una vez en cada nivel (la Nova, solo una vez por juego)
+function scheduleLevelPowerUps() {
+  powerUp        = null;
+  powerUpPending = true;
+  powerUpDelay   = rand(...POWERUP_DELAY);
+  slowPowerUp    = null;
+  slowPending    = true;
+  slowDelay      = rand(...SLOW_DELAY);
+  hyperPowerUp   = null;
+  hyperPending   = true;
+  hyperDelay     = rand(...HYPER_DELAY);
+}
+
 function initGame() {
   ship          = new Ship();
   bullets   = [];
@@ -352,22 +364,15 @@ function initGame() {
   lives  = 3;
   level  = 1;
   state  = 'playing';
-  powerUp        = null;
-  powerUpPending = true;
-  powerUpDelay   = rand(...POWERUP_DELAY);
   tripleTimer    = 0;
-  slowPowerUp    = null;
-  slowPending    = false;
   slowTimer      = 0;
   novaPowerUp    = null;
   novaPending    = true;
   novaDelay      = rand(...NOVA_DELAY);
   novaReady      = false;
   novaFlash      = 0;
-  hyperPowerUp   = null;
-  hyperPending   = true;
-  hyperDelay     = rand(...HYPER_DELAY);
   hyperTimer     = 0;
+  scheduleLevelPowerUps();
   spawnAsteroids(4);
 }
 
@@ -377,9 +382,7 @@ function nextLevel() {
   particles = [];
   ship.reset();
   slowTimer   = 0;
-  slowPowerUp = null;
-  slowPending = level >= SLOW_MIN_LEVEL;
-  slowDelay   = rand(...SLOW_DELAY);
+  scheduleLevelPowerUps();
   spawnAsteroids(3 + level);
 }
 
@@ -440,7 +443,7 @@ function update(dt) {
     bullets.push(...ship.tryShoot());
   }
 
-  // Hiperpropulsión: una vez por juego (se actualiza antes que la nave, que lee hyperTimer)
+  // Hiperpropulsión: una vez por nivel (se actualiza antes que la nave, que lee hyperTimer)
   if (hyperTimer > 0) hyperTimer = Math.max(0, hyperTimer - dt);
   if (hyperPending) {
     hyperDelay -= dt;
@@ -494,7 +497,7 @@ function update(dt) {
   }
   if (pressed(NOVA_KEY) && novaReady) detonateNova();
 
-  // Power-up de ralentización: una vez por nivel desde SLOW_MIN_LEVEL
+  // Power-up de ralentización: una vez por nivel
   if (slowTimer > 0) slowTimer = Math.max(0, slowTimer - dt);
   if (slowPending) {
     slowDelay -= dt;
