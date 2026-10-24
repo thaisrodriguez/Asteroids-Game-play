@@ -462,7 +462,7 @@ function update(dt) {
 
   ship.update(dt);
 
-  // Power-up: aparece una sola vez por juego
+  // Power-up de disparo triple: una vez por nivel
   if (tripleTimer > 0) tripleTimer = Math.max(0, tripleTimer - dt);
   if (powerUpPending) {
     powerUpDelay -= dt;
