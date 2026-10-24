@@ -134,10 +134,17 @@ const NOVA_KEY   = 'KeyB';
 const NOVA_DELAY = [25, 45];   // segundos hasta que aparece (ítem escaso: una vez por juego)
 const NOVA_FLASH = 0.6;        // duración del destello al detonar
 
+// ── Power-up: hiperpropulsión ─────────────────────────────────────────────────
+const HYPER_DURATION = 8;           // segundos de efecto
+const HYPER_THRUST   = 2.5;         // multiplicador de aceleración (y velocidad máxima)
+const HYPER_ROT      = 1.35;        // multiplicador de giro, para esquivar con precisión
+const HYPER_DELAY    = [18, 35];    // segundos hasta que aparece (una vez por juego)
+
 const POWERUP_STYLE = {
   triple: { color: '#0ff', label: '3' },
   slow:   { color: '#6f6', label: 'L' },
   nova:   { color: '#f6f', label: 'N' },
+  hyper:  { color: '#ff0', label: 'H' },
 };
 
 class PowerUp {
@@ -202,8 +209,9 @@ class Ship {
     if (this.invincible    > 0) this.invincible    -= dt;
     if (this.shootCooldown > 0) this.shootCooldown -= dt;
 
-    const ROT   = 3.5;   // rad/s
-    const THRUST = 260;  // px/s²
+    const boost  = hyperTimer > 0;
+    const ROT    = 3.5 * (boost ? HYPER_ROT : 1);     // rad/s
+    const THRUST = 260 * (boost ? HYPER_THRUST : 1);  // px/s²
     const DRAG   = 0.987;
 
     if (keys['ArrowLeft'])  this.angle -= ROT * dt;
@@ -318,6 +326,10 @@ let novaPending;      // true hasta que aparece (una vez por juego)
 let novaDelay;        // segundos jugados hasta que aparece
 let novaReady;        // true si la nave lleva una bomba lista (un solo uso)
 let novaFlash;        // segundos restantes del destello de detonación
+let hyperPowerUp;     // ítem de hiperpropulsión en pantalla (o null)
+let hyperPending;     // true hasta que aparece (una vez por juego)
+let hyperDelay;       // segundos jugados hasta que aparece
+let hyperTimer;       // segundos restantes de hiperpropulsión
 
 function spawnAsteroids(count) {
   const SAFE_DIST = 130;
@@ -352,6 +364,10 @@ function initGame() {
   novaDelay      = rand(...NOVA_DELAY);
   novaReady      = false;
   novaFlash      = 0;
+  hyperPowerUp   = null;
+  hyperPending   = true;
+  hyperDelay     = rand(...HYPER_DELAY);
+  hyperTimer     = 0;
   spawnAsteroids(4);
 }
 
@@ -391,6 +407,7 @@ function killShip() {
   ship.dead = true;
   tripleTimer = 0;
   slowTimer   = 0;
+  hyperTimer  = 0;
   lives--;
   if (lives <= 0) {
     state = 'gameover';
@@ -421,6 +438,23 @@ function update(dt) {
   // Disparar
   if (pressed('Space')) {
     bullets.push(...ship.tryShoot());
+  }
+
+  // Hiperpropulsión: una vez por juego (se actualiza antes que la nave, que lee hyperTimer)
+  if (hyperTimer > 0) hyperTimer = Math.max(0, hyperTimer - dt);
+  if (hyperPending) {
+    hyperDelay -= dt;
+    if (hyperDelay <= 0) {
+      hyperPending = false;
+      hyperPowerUp = new PowerUp('hyper');
+    }
+  }
+  if (hyperPowerUp) {
+    hyperPowerUp.update(dt);
+    if (dist(ship, hyperPowerUp) < ship.radius + hyperPowerUp.radius) {
+      hyperTimer   = HYPER_DURATION;
+      hyperPowerUp = null;
+    }
   }
 
   ship.update(dt);
@@ -560,6 +594,11 @@ function drawHUD() {
   if (novaReady) {
     ctx.fillStyle = POWERUP_STYLE.nova.color;
     ctx.fillText('NOVA [B]', 14, row);
+    row += 22;
+  }
+  if (hyperTimer > 0) {
+    ctx.fillStyle = POWERUP_STYLE.hyper.color;
+    ctx.fillText(`HIPER ${hyperTimer.toFixed(1)}s`, 14, row);
   }
 
 }
@@ -584,6 +623,7 @@ function draw() {
   if (powerUp) powerUp.draw();
   if (slowPowerUp) slowPowerUp.draw();
   if (novaPowerUp) novaPowerUp.draw();
+  if (hyperPowerUp) hyperPowerUp.draw();
   ship.draw();
 
   drawHUD();
